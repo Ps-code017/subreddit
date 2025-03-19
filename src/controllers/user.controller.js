@@ -24,6 +24,8 @@ const getAccessAndRefreshToken = async (userId) => {
 
         const accessToken = user.generateAccessToken();
         const refreshToken = user.generateRefreshToken();
+        // console.log("in function",accessToken)
+        // console.log("in function",refreshToken)
 
         user.refreshToken = refreshToken;
         await user.save({ validateBeforeSave: false });
@@ -52,45 +54,60 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // })
 
-const googleSignInUser=asyncHandler(async(req,res)=>{
+const googleSignInUser = asyncHandler(async (req, res) => {
+    const { idToken } = req.body;  
 
-    const {idtoken}=req.body;
-    if(!idtoken){
-        throw new ApiError(400,"Token required")
+    if (!idToken) {
+        throw new ApiError(400, "Token required");
     }
-    const ticket =await client.verifyIdToken({
 
-        idtoken,
-        audience:process.env.GOOGLE_CLIENT_ID
-    })
-    if(!ticket){
-        throw new ApiError(400,"verification failed")
-    }
+    let ticket;
     try {
-        const payload=ticket.getPayload()
-        const{sub,email,name}=payload;
-    
-        let user=await User.findOne({googleId:sub})
-        if(!user){
-            user=await User.create({
-                email,
-                fullName:name,
-                googleId:sub
-
-            })
-        }
-        const {accessToken,refreshToken}=getAccessAndRefreshToken(user._id)
-        const loggedinUser=await User.findById(user._id).select("-refreshToken -googleId")
-
-        return res.json(200).cookie("accessToken",accessToken,options).cookie("refreshToken",refreshToken,options).json({
-            accessToken,refreshToken,user:loggedinUser
-        })
+        ticket = await client.verifyIdToken({
+            idToken,  
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
     } catch (error) {
-        throw new ApiError(500,"something went wrong")
-        
+        console.error("Token Verification Error:", error);
+        throw new ApiError(400, "Verification failed");
     }
 
-})
+    if (!ticket) {
+        throw new ApiError(400, "Verification failed");
+    }
+
+    try {
+        const payload = ticket.getPayload();
+        // console.log(payload)
+        const { sub, email, name } = payload;
+
+        let user = await User.findOne({ googleId: sub });
+
+        if (!user) {
+            user = await User.create({
+                email,
+                fullName: name ||email.split('@')[0],
+                googleId: sub,
+            });
+        }
+        await user.save();
+        console.log("user saved",user)
+
+        const { accessToken, refreshToken } = await getAccessAndRefreshToken(user._id);
+        // console.log("Generated Tokens:", { accessToken, refreshToken });
+        const loggedInUser = await User.findById(user._id).select("-refreshToken -googleId");
+
+        return res
+            .status(200)  
+            .cookie("accessToken", accessToken, options)
+            .cookie("refreshToken", refreshToken, options)
+            .json({ accessToken, refreshToken, user: loggedInUser });
+    } catch (error) {
+        console.error("Google Sign-In Error:", error);
+        throw new ApiError(500, error.message || "Something went wrong");
+    }
+});
+
 
 
 

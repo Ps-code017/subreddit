@@ -13,7 +13,7 @@ const verifyJWT=asyncHandler(async(req,_,next)=>{
         }
     
         const decodedToken=jwt.verify(token,process.env.ACCESS_SECRET)
-        
+        // console.log("Cookies:", req.cookies);
         const user=await User.findOne({
             _id:decodedToken?._id,
             googleId:decodedToken?.gid
